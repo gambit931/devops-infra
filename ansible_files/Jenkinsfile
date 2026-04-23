@@ -1,0 +1,49 @@
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'APP_TAG', defaultValue: 'v1.0.1', description: 'Docker image tag to deploy')
+    }
+
+    stages {
+        stage('Get Code') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Provision EC2') {
+            steps {
+                withCredentials([
+                    [$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']
+                ]) {
+                    sh '''
+                    cd ansible_files
+                    ansible-playbook provision_prod.yml
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy App') {
+            steps {
+                sh """
+                cd ansible_files
+                ansible-playbook deploy_app.yml --extra-vars "app_tag=${params.APP_TAG}" --private-key ~/devops-lab-project/ansible_files/flask_running_app_staging_key.pem -u ubuntu
+                """
+            }
+        }
+
+        stage('Verify App') {
+            steps {
+                sh '''
+                PROD_IP=$(aws ec2 describe-instances \
+                  --filters "Name=tag:Name,Values=devops-prod" "Name=instance-state-name,Values=running" \
+                  --query "Reservations[0].Instances[0].PublicIpAddress" \
+                  --output text)
+                curl http://$PROD_IP/
+                '''
+            }
+        }
+    }
+}
