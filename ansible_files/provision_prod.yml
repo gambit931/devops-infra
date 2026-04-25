@@ -23,14 +23,22 @@
         wait: yes
       register: ec2_output
 
+    - name: Get public IP of new instance
+      ec2_instance_info:
+        region: "{{ region }}"
+        filters:
+          "tag:Name": "{{ instance_name }}"
+          instance-state-name: running
+      register: prod_info
+
     - name: Add new instance to inventory
       add_host:
-        hostname: "{{ ec2_output.instances[0].public_ip_address }}"
-        groupname: prod
+        hostname: "{{ prod_info.instances[0].public_ip_address }}"
+        groupname: prod 
 
     - name: Wait for SSH
       wait_for:
-        host: "{{ ec2_output.instances[0].public_ip_address }}"
+        host: "{{ prod_info.instances[0].public_ip_address }}"
         port: 22
         delay: 20
         timeout: 300
