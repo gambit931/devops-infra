@@ -1,4 +1,4 @@
-- name: Provision Production EC2 Instance
+- name: Provision Production EC2
   hosts: localhost
   connection: local
   gather_facts: no
@@ -23,18 +23,18 @@
         wait: yes
       register: ec2_output
 
-    - name: Get public IP of new instance
+    - name: Get instance info using instance ID
       ec2_instance_info:
         region: "{{ region }}"
-        filters:
-          "tag:Name": "{{ instance_name }}"
-          instance-state-name: running
+        instance_ids:
+          - "{{ ec2_output.instance_ids[0] }}"
       register: prod_info
 
-    - name: Add new instance to inventory
+    - name: Add production instance to inventory
       add_host:
         hostname: "{{ prod_info.instances[0].public_ip_address }}"
-        groupname: prod 
+        groupname: prod
+        ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
 
     - name: Wait for SSH
       wait_for:
@@ -42,3 +42,35 @@
         port: 22
         delay: 20
         timeout: 300
+        state: started
+
+- name: Install Docker and Deploy App
+  hosts: prod
+  remote_user: ubuntu
+  become: yes
+
+  vars:
+    image_name: ysafdar/devops-app
+    image_tag: "{{ app_tag }}"
+
+  tasks:
+    - name: Install Docker
+      apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+
+    - name: Start Docker
+      service:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Remove existing container
+      shell: docker rm -f devops-app || true
+
+    - name: Pull Docker image
+      shell: docker pull "{{ image_name }}:{{ image_tag }}"
+
+    - name: Run Docker container on port 80
+      shell: docker run -d --name devops-app -p 80:8000 "{{ image_name }}:{{ image_tag }}"
